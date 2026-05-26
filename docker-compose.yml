@@ -1,0 +1,8 @@
+services:
+  karoo-downloader:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/data      # persists token.json + downloaded.db
+      - ./output:/output  # .fit files land here
+    restart: "no"         # run-and-exit; triggered by host cron
