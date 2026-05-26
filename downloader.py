@@ -21,7 +21,7 @@ load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-NEXUS_BASE = "https://nexus.quarqnet.com"
+NEXUS_BASE = "https://dashboard.hammerhead.io"
 AUTH_URL = f"{NEXUS_BASE}/v1/auth/token"
 
 EMAIL = os.environ.get("HH_EMAIL", "").strip()
@@ -65,9 +65,13 @@ def db_connect() -> sqlite3.Connection:
 
 def db_is_downloaded(conn: sqlite3.Connection, activity_id: str) -> bool:
     row = conn.execute(
-        "SELECT 1 FROM downloaded_activities WHERE id = ?", (activity_id,)
+        "SELECT filename FROM downloaded_activities WHERE id = ?", (activity_id,)
     ).fetchone()
-    return row is not None
+    if row is None:
+        return False
+    # Only skip if we have an actual file; retry __no_fit__ entries so endpoint
+    # changes can be picked up on the next run.
+    return row[0] != "__no_fit__"
 
 
 def db_mark_downloaded(conn: sqlite3.Connection, activity_id: str, filename: str) -> None:
@@ -230,18 +234,23 @@ def list_activities(user_id: str, access_token: str) -> list[dict]:
 
 
 def download_fit(user_id: str, activity_id: str, access_token: str) -> bytes | None:
-    """Download the .fit binary for the given activity. Returns None if unavailable."""
-    url = f"{NEXUS_BASE}/v1/users/{user_id}/activities/{activity_id}"
+    """
+    Download the .fit binary for the given activity.
+    Returns None only if the server confirms there is no .fit (404/422).
+    Raises on any other error so the caller can count it as a failure.
+    """
+    url = f"{NEXUS_BASE}/v1/users/{user_id}/activities/{activity_id}/file?format=fit"
     try:
-        resp = api_get(url, access_token, accept="application/vnd.ant.fit")
+        resp = api_get(url, access_token)
         content_type = resp.headers.get("content-type", "")
-        if "vnd.ant.fit" not in content_type and "octet-stream" not in content_type:
-            log.debug("Activity %s returned content-type %s — skipping.", activity_id, content_type)
-            return None
-        return resp.content
+        if "vnd.ant.fit" in content_type or "octet-stream" in content_type or len(resp.content) > 0:
+            return resp.content
+        log.warning("Activity %s: empty response (ct=%s).", activity_id, content_type)
+        return None
     except requests.HTTPError as exc:
-        if exc.response is not None and exc.response.status_code in (404, 422):
-            log.debug("Activity %s: no .fit available (%s).", activity_id, exc.response.status_code)
+        status = exc.response.status_code if exc.response is not None else "?"
+        if status in (404, 422):
+            log.warning("Activity %s: no .fit file on server (%s).", activity_id, status)
             return None
         raise
 
@@ -254,14 +263,21 @@ def make_filename(activity: dict) -> str:
     name = activity.get("name") or "Ride"
     # Sanitise name for filesystem
     safe_name = "".join(c if c.isalnum() or c in " -_()" else "_" for c in name).strip()
-    # Prefer ISO start time for prefix
-    start = activity.get("startTime") or activity.get("start_time") or activity.get("date") or ""
+    # Prefer ISO start time for prefix; startTime is nested under "duration"
+    duration = activity.get("duration") or {}
+    start = (
+        duration.get("startTime")
+        or activity.get("startTime")
+        or activity.get("createdAt")
+        or ""
+    )
     if start:
-        # Truncate to date portion (YYYY-MM-DD)
-        date_prefix = start[:10].replace(":", "-")
+        # Format as YYYY-MM-DD_HH-MM-SS (colons replaced for filesystem safety)
+        # ISO string: "2026-05-25T11:55:55.279Z" → "2026-05-25_11-55-55"
+        dt_str = start[:19].replace("T", "_").replace(":", "-")
     else:
-        date_prefix = "unknown"
-    return f"{date_prefix}_{safe_name}_{activity_id}.fit"
+        dt_str = "unknown"
+    return f"{dt_str}_{safe_name}_{activity_id}.fit"
 
 
 def run() -> None:
