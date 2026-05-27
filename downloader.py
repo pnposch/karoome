@@ -76,7 +76,8 @@ def db_is_downloaded(conn: sqlite3.Connection, activity_id: str) -> bool:
 
 def db_mark_downloaded(conn: sqlite3.Connection, activity_id: str, filename: str) -> None:
     conn.execute(
-        "INSERT OR IGNORE INTO downloaded_activities (id, filename, downloaded_at) VALUES (?, ?, ?)",
+        "INSERT INTO downloaded_activities (id, filename, downloaded_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET filename = excluded.filename, downloaded_at = excluded.downloaded_at",
         (activity_id, filename, datetime.now(timezone.utc).isoformat()),
     )
     conn.commit()
