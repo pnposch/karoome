@@ -6,7 +6,6 @@ Usage:
     docker compose run --rm karoo-downloader python /app/inspect_fits.py /output
 """
 import sys
-import os
 from pathlib import Path
 from datetime import timedelta
 
