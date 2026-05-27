@@ -243,8 +243,16 @@ def download_fit(user_id: str, activity_id: str, access_token: str) -> bytes | N
     """
     url = f"{NEXUS_BASE}/v1/users/{user_id}/activities/{activity_id}/file?format=fit"
     try:
-        resp = api_get(url, access_token)
-        content_type = resp.headers.get("content-type", "")
+        resp = api_get(
+            url,
+            access_token,
+            accept="application/vnd.ant.fit, application/octet-stream",
+        )
+        content_type = resp.headers.get("content-type", "").lower()
+        if "application/json" in content_type or "text/" in content_type or "html" in content_type:
+            raise RuntimeError(
+                f"Activity {activity_id}: expected FIT binary but got content-type {content_type!r}."
+            )
         if "vnd.ant.fit" in content_type or "octet-stream" in content_type or len(resp.content) > 0:
             return resp.content
         log.warning("Activity %s: empty response (ct=%s).", activity_id, content_type)
