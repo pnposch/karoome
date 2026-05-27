@@ -118,6 +118,6 @@ print(f'{n} entries cleared')
 
 ## Notes
 
-- Files that have no `.fit` on the server (e.g. imported GPX rides) are marked as processed and won't be retried.
+- Activities that currently have no `.fit` on the server (e.g. imported GPX rides) are **not** treated as permanently downloaded; they will be retried on subsequent runs. In other words, retries are not suppressed by the dedup DB entry and are currently unbounded.
 - The dedup key is the activity's `id` field from the API — renaming or deleting output files won't cause re-downloads (only the DB controls dedup).
 - Token refresh happens automatically on each run; full re-login only if the refresh token has expired.
