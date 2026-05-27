@@ -3,6 +3,6 @@ services:
     build: .
     env_file: .env
     volumes:
-      - ./data:/data      # persists token.json + downloaded.db
-      - ./output:/output  # .fit files land here
+      - ./data:/data:z      # persists token.json + downloaded.db
+      - ./output:/output:z  # .fit files land here
     restart: "no"         # run-and-exit; triggered by host cron

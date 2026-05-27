@@ -37,6 +37,16 @@ docker compose run --rm karoo-downloader
 Downloaded `.fit` files appear in `./output/`.  
 State (auth token + download history) is stored in `./data/`.
 
+## Inspecting downloaded files
+
+`inspect_fits.py` parses every `.fit` in a directory and prints a summary table (start time, duration, distance, record count, any parse errors):
+
+```bash
+docker compose run --rm karoo-downloader python /app/inspect_fits.py /output
+# or locally:
+python inspect_fits.py ./output
+```
+
 ## Automated daily run (host cron)
 
 Add a cron entry on the host to trigger the downloader every night at midnight:
@@ -53,7 +63,8 @@ crontab -e
 
 ```
 karoome/
-├── downloader.py          # Main script
+├── downloader.py          # Main downloader script
+├── inspect_fits.py        # Diagnostic: parse and summarise .fit files
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
@@ -75,8 +86,38 @@ karoome/
 | `DATA_DIR`    | Override data dir (default `/data`)  |
 | `OUTPUT_DIR`  | Override output dir (default `/output`) |
 
+## Maintenance
+
+### Re-download a specific activity
+
+Delete its row from the database (use the activity ID shown in the filename):
+
+```bash
+docker compose run --rm karoo-downloader python -c "
+import sqlite3
+conn = sqlite3.connect('/data/downloaded.db')
+conn.execute(\"DELETE FROM downloaded_activities WHERE id = '194067.activity.REPLACE-ME'\")
+conn.commit()
+print('done')
+"
+```
+
+### Re-download everything
+
+Wipe the entire download history — all activities will be downloaded again on the next run:
+
+```bash
+docker compose run --rm karoo-downloader python -c "
+import sqlite3
+conn = sqlite3.connect('/data/downloaded.db')
+n = conn.execute('DELETE FROM downloaded_activities').rowcount
+conn.commit()
+print(f'{n} entries cleared')
+"
+```
+
 ## Notes
 
-- Files that have no `.fit` on the server (e.g. imported GPX rides) are marked as processed and won't be retried.
-- The dedup key is the activity's `id` field from the API — renaming files won't cause re-downloads.
+- Activities that currently have no `.fit` on the server (e.g. imported GPX rides) are **not** treated as permanently downloaded; they will be retried on subsequent runs. In other words, retries are not suppressed by the dedup DB entry and are currently unbounded.
+- The dedup key is the activity's `id` field from the API — renaming or deleting output files won't cause re-downloads (only the DB controls dedup).
 - Token refresh happens automatically on each run; full re-login only if the refresh token has expired.
