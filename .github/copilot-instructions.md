@@ -8,7 +8,7 @@ REST API discovered by analysing the dashboard's minified JS bundle.
 
 ## Architecture
 
-Everything lives in `downloader.py`. The flow is:
+The download flow lives in `downloader.py`. The overall tool flow is:
 
 1. **Auth** — OAuth2 ROPC grant (`grant_type=password`) to `https://dashboard.hammerhead.io/v1/auth/token`.
    On every run: try token refresh first; fall back to full login only if refresh fails.
