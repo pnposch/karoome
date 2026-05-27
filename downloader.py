@@ -236,7 +236,8 @@ def list_activities(user_id: str, access_token: str) -> list[dict]:
 def download_fit(user_id: str, activity_id: str, access_token: str) -> bytes | None:
     """
     Download the .fit binary for the given activity.
-    Returns None only if the server confirms there is no .fit (404/422).
+    Returns None if the server confirms there is no .fit (404/422), or if the
+    server responds successfully but with an empty body.
     Raises on any other error so the caller can count it as a failure.
     """
     url = f"{NEXUS_BASE}/v1/users/{user_id}/activities/{activity_id}/file?format=fit"
