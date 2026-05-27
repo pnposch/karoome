@@ -47,7 +47,7 @@ docker compose run --rm karoo-downloader python /app/inspect_fits.py /output
 python inspect_fits.py ./output
 ```
 
-
+## Automated daily run (host cron)
 
 Add a cron entry on the host to trigger the downloader every night at midnight:
 
