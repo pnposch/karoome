@@ -8,7 +8,8 @@ Automatically downloads `.fit` activity files from [dashboard.hammerhead.io](htt
 2. Paginates through all activities on the server.
 3. Skips activities already present in a local SQLite database.
 4. Downloads each new activity as a `.fit` file into the output directory.
-5. Saves/refreshes the token so subsequent runs don't need to re-login.
+5. Optionally deletes the activity from the cloud after confirming it is saved locally (see `DELETE_AFTER_DOWNLOAD`).
+6. Saves/refreshes the token so subsequent runs don't need to re-login.
 
 ## Prerequisites
 
@@ -79,12 +80,26 @@ karoome/
 
 ## Environment variables
 
-| Variable      | Description                          |
-|---------------|--------------------------------------|
-| `HH_EMAIL`    | Your SRAM / Hammerhead account email |
-| `HH_PASSWORD` | Your SRAM / Hammerhead password      |
-| `DATA_DIR`    | Override data dir (default `/data`)  |
-| `OUTPUT_DIR`  | Override output dir (default `/output`) |
+| Variable                | Description                          |
+|-------------------------|--------------------------------------|
+| `HH_EMAIL`              | Your SRAM / Hammerhead account email |
+| `HH_PASSWORD`           | Your SRAM / Hammerhead password      |
+| `DATA_DIR`              | Override data dir (default `/data`)  |
+| `OUTPUT_DIR`            | Override output dir (default `/output`) |
+| `DELETE_AFTER_DOWNLOAD` | Set to `1`, `true`, or `yes` to delete activities from the cloud after successful local download (default: off) |
+
+## Delete from cloud after download
+
+Set `DELETE_AFTER_DOWNLOAD=true` in your `.env` file to have the downloader remove each activity from the Hammerhead cloud immediately after it has been saved locally.
+
+**Safety behaviour:**
+- The local `.fit` file is always written and the DB record committed before any delete attempt.
+- If the cloud delete fails, a warning is logged but the run continues — the file is already safe locally.
+- Only activities downloaded in the current run are deleted; previously-skipped activities (already in the local DB) are not touched.
+- A 404 response from the delete endpoint is treated as "already gone" and counted as success.
+- The final summary line reports how many activities were deleted from the cloud.
+
+> **Warning:** This is a destructive operation on the cloud. Once deleted, the activity cannot be recovered from the Hammerhead server. Verify your local output directory is correctly backed up before enabling this option.
 
 ## Maintenance
 

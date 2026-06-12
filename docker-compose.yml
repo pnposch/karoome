@@ -2,6 +2,9 @@ services:
   karoo-downloader:
     build: .
     env_file: .env
+    # environment:
+    #   DELETE_AFTER_DOWNLOAD: "false"   # Set to "true" to remove activities from
+    #                                    # the cloud after successful local download.
     volumes:
       - ./data:/data:z      # persists token.json + downloaded.db
       - ./output:/output:z  # .fit files land here

@@ -31,6 +31,7 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "/output"))
 TOKEN_FILE = DATA_DIR / "token.json"
 DB_FILE = DATA_DIR / "downloaded.db"
+DELETE_AFTER_DOWNLOAD = os.environ.get("DELETE_AFTER_DOWNLOAD", "").strip().lower() in ("1", "true", "yes")
 
 # Retry / pagination settings
 MAX_RETRIES = 3
@@ -201,6 +202,29 @@ def api_get(url: str, access_token: str, accept: str = "application/json", **kwa
             time.sleep(wait)
 
 
+def api_delete(url: str, access_token: str) -> requests.Response | None:
+    """Authenticated DELETE with retry. Returns None on 404 (already gone), raises on other errors."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = requests.delete(url, headers=headers, timeout=30)
+            if resp.status_code == 429:
+                retry_after = int(resp.headers.get("Retry-After", 10))
+                log.warning("Rate-limited on DELETE; sleeping %ds …", retry_after)
+                time.sleep(retry_after)
+                continue
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+            return resp
+        except requests.RequestException as exc:
+            if attempt == MAX_RETRIES:
+                raise
+            wait = RETRY_BACKOFF ** attempt
+            log.warning("DELETE request failed (%s); retrying in %ds …", exc, wait)
+            time.sleep(wait)
+
+
 def list_activities(user_id: str, access_token: str) -> list[dict]:
     """Return all activities for the user (handles pagination)."""
     activities = []
@@ -255,6 +279,21 @@ def download_fit(user_id: str, activity_id: str, access_token: str) -> bytes | N
         raise
 
 
+def delete_activity(user_id: str, activity_id: str, access_token: str) -> bool:
+    """Delete activity from cloud. Returns True on success (including 404). Logs warning and returns False on failure."""
+    url = f"{NEXUS_BASE}/v1/users/{user_id}/activities/{activity_id}"
+    try:
+        resp = api_delete(url, access_token)
+        if resp is None:
+            log.info("  Activity %s already absent from cloud (404).", activity_id)
+        else:
+            log.info("  Deleted activity %s from cloud (HTTP %s).", activity_id, resp.status_code)
+        return True
+    except Exception as exc:
+        log.warning("  Could not delete activity %s from cloud: %s  (file kept locally).", activity_id, exc)
+        return False
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def make_filename(activity: dict) -> str:
@@ -294,6 +333,7 @@ def run() -> None:
     new_count = 0
     skip_count = 0
     fail_count = 0
+    deleted_count = 0
 
     for activity in activities:
         activity_id = str(activity.get("id", ""))
@@ -327,13 +367,28 @@ def run() -> None:
         new_count += 1
         log.info("  Saved %d bytes → %s", len(fit_data), out_path)
 
-    log.info(
-        "Done. Downloaded: %d  |  Skipped (already done): %d  |  Failed: %d",
-        new_count,
-        skip_count,
-        fail_count,
+        if DELETE_AFTER_DOWNLOAD:
+            if delete_activity(user_id, activity_id, token["access_token"]):
+                deleted_count += 1
+
+    summary = (
+        f"Done. Downloaded: {new_count}"
+        f"  |  Skipped (already done): {skip_count}"
+        f"  |  Failed: {fail_count}"
     )
+    if DELETE_AFTER_DOWNLOAD:
+        summary += f"  |  Deleted from cloud: {deleted_count}"
+    log.info(summary)
     conn.close()
+
+    # Notify koach to ingest new files immediately
+    webhook_url = os.environ.get("KOACH_WEBHOOK_URL", "").strip()
+    if new_count > 0 and webhook_url:
+        try:
+            resp = requests.post(webhook_url, timeout=30)
+            log.info("Triggered koach ingestion: %s", resp.status_code)
+        except Exception as exc:
+            log.warning("Could not reach koach webhook (%s): %s", webhook_url, exc)
 
 
 if __name__ == "__main__":
